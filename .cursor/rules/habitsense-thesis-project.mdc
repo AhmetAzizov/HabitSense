@@ -1,0 +1,85 @@
+---
+description: HabitSense thesis project context, architecture, and completed foundation milestones
+alwaysApply: true
+---
+
+# HabitSense — Master's Thesis Project
+
+## Purpose
+HabitSense is a native Android research platform for the thesis:
+"A RESEARCH ON THE EFFECTIVENESS OF ARTIFICIAL INTELLIGENCE METHODS IN MONITORING AND ANALYZING USER BEHAVIOR ON ANDROID MOBILE DEVICES".
+
+The app is **app-first, AI-enhanced**: it must work as a standard offline habit/mood/expense tracker, with analytics engines layered on top.
+
+## Core Principles
+- Kotlin + MVVM/Clean Architecture
+- Offline-first local storage with Room
+- Coroutines/Flow for async work
+- `dateString` (`YYYY-MM-DD`) is the primary grouping key across all tables
+- Strategy Pattern for analytics: baseline vs complex methods are swappable behind interfaces
+
+## Data Layer (Completed Foundation)
+Room entities:
+- `HabitEntity`
+- `HabitLogEntity` (unique `habitId + dateString`, binary completion)
+- `MoodLogEntity` (unique `dateString`, mood 1..5)
+- `ExpenseLogEntity` (multiple entries per day allowed)
+- `ExperimentRunEntity` (strategy execution metrics for thesis evaluation)
+
+Key files:
+- `app/src/main/java/com/azizov/habitsense/data/local/entity/*`
+- `app/src/main/java/com/azizov/habitsense/data/local/dao/*`
+- `app/src/main/java/com/azizov/habitsense/data/local/HabitSenseDatabase.kt`
+
+## Feature Pipeline (Completed Foundation)
+- `DailyData` aggregates one day across habits/mood/expenses
+- `DailyData.toFloatArray(habitOrder)` uses fixed feature ordering
+- `FeatureSchema.VERSION` validates ML input compatibility
+
+Key files:
+- `app/src/main/java/com/azizov/habitsense/domain/model/DailyData.kt`
+- `app/src/main/java/com/azizov/habitsense/domain/model/FeatureSchema.kt`
+- `app/src/main/java/com/azizov/habitsense/data/repository/DailyDataRepository.kt`
+
+## Synthetic Data (Completed Foundation)
+- Seeded generator populates 6–12 months of mock data with simple distributions
+- Respects DB constraints (valid habit IDs, max one mood/day)
+
+Key files:
+- `app/src/main/java/com/azizov/habitsense/data/synthetic/SyntheticDataConfig.kt`
+- `app/src/main/java/com/azizov/habitsense/data/synthetic/SyntheticDataGenerator.kt`
+
+## AI Strategy Layer (Completed Foundation)
+Interfaces:
+- `HabitPredictor` (per-habit tomorrow prediction)
+- `DayClusterer`
+- `CorrelationAnalyzer`
+
+Baseline implementations:
+- Moving average habit predictor
+- Heuristic day clusterer
+- Spearman correlation analyzer
+
+Complex implementations:
+- TFLite habit predictor (`app/src/main/assets/habit_predictor.tflite`, loaded via `FileUtil.loadMappedFile`)
+- Native Kotlin K-Means day clusterer
+- Apriori-style association rule analyzer
+
+Switching:
+- `StrategyFactory` + `StrategyMode.BASELINE|COMPLEX`
+
+Performance tracking:
+- `PerformanceProbe` captures execution time/memory
+- `StrategyExecutor` persists runs in `ExperimentRunEntity`
+
+## Planned UI Direction (Not Yet Implemented)
+- Today tab: fast daily input
+- Domains tab: historical charts/trends
+- Insights tab: thesis intelligence screen (predictions, clusters, correlations, advice)
+
+## Implementation Rules for Future Work
+- Do not break `dateString` grouping semantics
+- Keep analytics decoupled from ViewModels (domain inputs/outputs only)
+- Preserve feature schema versioning when changing ML inputs
+- Log strategy runtime/memory for thesis evaluation on complex paths
+- Prefer minimal, scoped changes; avoid unrelated refactors
