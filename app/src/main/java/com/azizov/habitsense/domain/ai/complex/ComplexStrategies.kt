@@ -4,6 +4,8 @@ import android.content.Context
 import com.azizov.habitsense.domain.ai.CorrelationAnalyzer
 import com.azizov.habitsense.domain.ai.DayClusterer
 import com.azizov.habitsense.domain.ai.HabitPredictor
+import com.azizov.habitsense.domain.ai.feature.ClusteringFeatureBuilder
+import com.azizov.habitsense.domain.ai.feature.HabitPredictionFeatureBuilder
 import com.azizov.habitsense.domain.ai.model.AssociationRule
 import com.azizov.habitsense.domain.ai.model.CorrelationInsight
 import com.azizov.habitsense.domain.ai.model.DayClusterAssignment
@@ -11,7 +13,6 @@ import com.azizov.habitsense.domain.ai.model.DayClusterInsight
 import com.azizov.habitsense.domain.ai.model.HabitPrediction
 import com.azizov.habitsense.domain.ai.model.HabitPredictionInsight
 import com.azizov.habitsense.domain.model.DailyData
-import com.azizov.habitsense.domain.model.FeatureSchema
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
 import kotlin.math.sqrt
@@ -19,7 +20,8 @@ import kotlin.math.sqrt
 class TfliteHabitPredictor(
     context: Context,
     private val modelAssetPath: String = "habit_predictor.tflite",
-    private val windowDays: Int = 7
+    private val windowDays: Int = 7,
+    private val featureBuilder: HabitPredictionFeatureBuilder = HabitPredictionFeatureBuilder(windowDays)
 ) : HabitPredictor, AutoCloseable {
     override val strategyName: String = "TfliteHabitPredictor"
     override val strategyVersion: String = "1.0"
@@ -29,32 +31,26 @@ class TfliteHabitPredictor(
         Interpreter(modelBuffer)
     }.getOrNull()
 
-    val isModelLoaded: Boolean get() = interpreter != null
-
     override fun predict(
         history: List<DailyData>,
         targetDateString: String,
         habitOrder: List<Long>
     ): HabitPredictionInsight {
         val trailing = history.takeLast(windowDays)
-        if (interpreter == null || trailing.size < windowDays) {
+        val model = interpreter
+        if (model == null || trailing.isEmpty()) {
             return fallbackMovingAverage(trailing, targetDateString, habitOrder)
         }
 
-        val featureDim = FeatureSchema.dimension(habitOrder.size)
-        val input = Array(1) { FloatArray(windowDays * featureDim) }
-        trailing.forEachIndexed { dayIndex, day ->
-            val vector = day.toFloatArray(habitOrder)
-            vector.forEachIndexed { featureIndex, value ->
-                input[0][dayIndex * featureDim + featureIndex] = value
+        val predictions = habitOrder.map { habitId ->
+            val probability = runCatching {
+                val input = arrayOf(featureBuilder.build(trailing, habitId))
+                val output = Array(1) { FloatArray(1) }
+                model.run(input, output)
+                output[0][0].coerceIn(0f, 1f)
+            }.getOrElse {
+                fallbackProbability(trailing, habitId)
             }
-        }
-
-        val output = Array(1) { FloatArray(habitOrder.size) }
-        interpreter.run(input, output)
-
-        val predictions = habitOrder.mapIndexed { index, habitId ->
-            val probability = output[0][index].coerceIn(0f, 1f)
             HabitPrediction(
                 habitId = habitId,
                 probabilityComplete = probability,
@@ -76,11 +72,7 @@ class TfliteHabitPredictor(
         habitOrder: List<Long>
     ): HabitPredictionInsight {
         val predictions = habitOrder.map { habitId ->
-            val rate = if (trailing.isEmpty()) {
-                0.5f
-            } else {
-                trailing.count { it.habitCompletionById[habitId] == true }.toFloat() / trailing.size
-            }
+            val rate = fallbackProbability(trailing, habitId)
             HabitPrediction(
                 habitId = habitId,
                 probabilityComplete = rate,
@@ -95,6 +87,12 @@ class TfliteHabitPredictor(
         )
     }
 
+    private fun fallbackProbability(trailing: List<DailyData>, habitId: Long): Float {
+        val activeHistory = trailing.mapNotNull { it.completionFor(habitId) }
+        if (activeHistory.isEmpty()) return 0.5f
+        return activeHistory.count { it }.toFloat() / activeHistory.size
+    }
+
     override fun close() {
         interpreter?.close()
     }
@@ -102,7 +100,8 @@ class TfliteHabitPredictor(
 
 class KMeansDayClusterer(
     private val k: Int = 4,
-    private val maxIterations: Int = 50
+    private val maxIterations: Int = 50,
+    private val featureBuilder: ClusteringFeatureBuilder = ClusteringFeatureBuilder()
 ) : DayClusterer {
     override val strategyName: String = "KMeans"
     override val strategyVersion: String = "1.0"
@@ -120,7 +119,7 @@ class KMeansDayClusterer(
             )
         }
 
-        val vectors = dailyData.map { it.toFloatArray(habitOrder) }
+        val vectors = dailyData.map { featureBuilder.build(it) }
         val centroids = initializeCentroids(vectors, k.coerceAtMost(vectors.size))
         var assignments = IntArray(vectors.size)
 
@@ -262,10 +261,10 @@ class AprioriCorrelationAnalyzer(
     private fun dayToItems(day: DailyData, habitOrder: List<Long>): Set<String> {
         val items = mutableSetOf<String>()
         habitOrder.forEach { habitId ->
-            if (day.habitCompletionById[habitId] == true) {
-                items += "habit_${habitId}_done"
-            } else {
-                items += "habit_${habitId}_miss"
+            when (day.completionFor(habitId)) {
+                true -> items += "habit_${habitId}_done"
+                false -> items += "habit_${habitId}_miss"
+                null -> Unit
             }
         }
         day.mood?.let { mood ->

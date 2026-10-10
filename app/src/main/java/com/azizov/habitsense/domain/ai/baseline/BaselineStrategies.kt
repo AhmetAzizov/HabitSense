@@ -26,13 +26,12 @@ class MovingAverageHabitPredictor(
     ): HabitPredictionInsight {
         val trailing = history.takeLast(windowDays)
         val predictions = habitOrder.map { habitId ->
-            val rate = if (trailing.isEmpty()) {
+            val activeHistory = trailing.mapNotNull { day -> day.completionFor(habitId) }
+            val rate = if (activeHistory.isEmpty()) {
                 0.5f
             } else {
-                val completedCount = trailing.count { day ->
-                    day.habitCompletionById[habitId] == true
-                }
-                completedCount.toFloat() / trailing.size.toFloat()
+                val completedCount = activeHistory.count { it }
+                completedCount.toFloat() / activeHistory.size.toFloat()
             }
             HabitPrediction(
                 habitId = habitId,
@@ -59,7 +58,7 @@ class HeuristicDayClusterer : DayClusterer {
         habitOrder: List<Long>
     ): DayClusterInsight {
         val assignments = dailyData.map { day ->
-            val completionRate = day.habitCompletionRate(habitOrder)
+            val completionRate = day.activeHabitCompletionRate()
             val mood = day.mood ?: 3
             val spend = day.expenseTotal
 
@@ -108,20 +107,21 @@ class SpearmanCorrelationAnalyzer : CorrelationAnalyzer {
         }
 
         val variableSeries = buildVariableSeries(dailyData, habitOrder)
-        val variableNames = variableSeries.keys.toList()
         val pairs = mutableListOf<CorrelationPair>()
 
-        for (i in variableNames.indices) {
-            for (j in i + 1 until variableNames.size) {
-                val nameA = variableNames[i]
-                val nameB = variableNames[j]
-                val coefficient = spearman(
-                    variableSeries.getValue(nameA),
-                    variableSeries.getValue(nameB)
-                )
+        for (i in variableSeries.indices) {
+            for (j in i + 1 until variableSeries.size) {
+                val seriesA = variableSeries[i]
+                val seriesB = variableSeries[j]
+                val sharedDates = seriesA.valuesByDate.keys.intersect(seriesB.valuesByDate.keys)
+                if (sharedDates.size < 3) continue
+
+                val valuesA = sharedDates.map { date -> seriesA.valuesByDate.getValue(date) }
+                val valuesB = sharedDates.map { date -> seriesB.valuesByDate.getValue(date) }
+                val coefficient = spearman(valuesA, valuesB)
                 pairs += CorrelationPair(
-                    variableA = nameA,
-                    variableB = nameB,
+                    variableA = seriesA.name,
+                    variableB = seriesB.name,
                     coefficient = coefficient,
                     strengthLabel = strengthLabel(coefficient)
                 )
@@ -135,22 +135,42 @@ class SpearmanCorrelationAnalyzer : CorrelationAnalyzer {
         )
     }
 
+    private data class Series(
+        val name: String,
+        val valuesByDate: Map<String, Float>
+    )
+
     private fun buildVariableSeries(
         dailyData: List<DailyData>,
         habitOrder: List<Long>
-    ): Map<String, List<Float>> {
-        val map = linkedMapOf<String, List<Float>>()
-        map["mood"] = dailyData.map { (it.mood ?: 3).toFloat() }
-        map["expense_total"] = dailyData.map { it.expenseTotal.toFloat() }
-        map["expense_count"] = dailyData.map { it.expenseCount.toFloat() }
-        map["habit_completion_rate"] = dailyData.map { it.habitCompletionRate(habitOrder) }
+    ): List<Series> {
+        val series = mutableListOf<Series>()
+        series += Series(
+            name = "mood",
+            valuesByDate = dailyData.associate { it.dateString to (it.mood ?: 3).toFloat() }
+        )
+        series += Series(
+            name = "expense_total",
+            valuesByDate = dailyData.associate { it.dateString to it.expenseTotal.toFloat() }
+        )
+        series += Series(
+            name = "expense_count",
+            valuesByDate = dailyData.associate { it.dateString to it.expenseCount.toFloat() }
+        )
+        series += Series(
+            name = "habit_completion_rate",
+            valuesByDate = dailyData.associate { it.dateString to it.activeHabitCompletionRate() }
+        )
 
         habitOrder.forEach { habitId ->
-            map["habit_$habitId"] = dailyData.map { day ->
-                if (day.habitCompletionById[habitId] == true) 1f else 0f
-            }
+            val valuesByDate = dailyData.mapNotNull { day ->
+                day.completionFor(habitId)?.let { completed ->
+                    day.dateString to if (completed) 1f else 0f
+                }
+            }.toMap()
+            if (valuesByDate.size >= 3) series += Series("habit_$habitId", valuesByDate)
         }
-        return map
+        return series
     }
 
     private fun spearman(x: List<Float>, y: List<Float>): Float {

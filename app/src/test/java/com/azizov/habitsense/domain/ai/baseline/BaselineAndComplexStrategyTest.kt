@@ -1,8 +1,10 @@
 package com.azizov.habitsense.domain.ai.baseline
 
+import com.azizov.habitsense.domain.ai.complex.AprioriCorrelationAnalyzer
 import com.azizov.habitsense.domain.ai.complex.KMeansDayClusterer
 import com.azizov.habitsense.domain.model.DailyData
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,10 +15,12 @@ class BaselineAndComplexStrategyTest {
         date: String,
         completed: Map<Long, Boolean>,
         mood: Int?,
-        expenseTotal: Double
+        expenseTotal: Double,
+        activeHabitIds: Set<Long> = completed.keys
     ) = DailyData(
         dateString = date,
         habitCompletionById = completed,
+        activeHabitIds = activeHabitIds,
         mood = mood,
         expenseTotal = expenseTotal,
         expenseCount = if (expenseTotal > 0) 1 else 0
@@ -43,6 +47,35 @@ class BaselineAndComplexStrategyTest {
     }
 
     @Test
+    fun movingAverage_ignoresDaysBeforeHabitWasActive() {
+        val history = listOf(
+            day(
+                date = "2026-07-01",
+                completed = mapOf(1L to true),
+                mood = 4,
+                expenseTotal = 20.0,
+                activeHabitIds = setOf(1L)
+            ),
+            day(
+                date = "2026-07-02",
+                completed = mapOf(1L to false, 2L to true),
+                mood = 3,
+                expenseTotal = 10.0,
+                activeHabitIds = setOf(1L, 2L)
+            )
+        )
+
+        val insight = MovingAverageHabitPredictor(windowDays = 2).predict(
+            history = history,
+            targetDateString = "2026-07-03",
+            habitOrder = habitOrder
+        )
+
+        val habit2 = insight.predictions.first { it.habitId == 2L }
+        assertEquals(1f, habit2.probabilityComplete, 0.0001f)
+    }
+
+    @Test
     fun heuristicClusterer_assignsReadableLabels() {
         val data = listOf(
             day("2026-07-01", mapOf(1L to true, 2L to true), 5, 20.0),
@@ -53,6 +86,22 @@ class BaselineAndComplexStrategyTest {
         assertEquals(2, insight.assignments.size)
         assertTrue(insight.assignments.any { it.label == "BalancedDay" })
         assertTrue(insight.assignments.any { it.label == "StressedSpendingDay" })
+    }
+
+    @Test
+    fun heuristicClusterer_usesOnlyActiveHabitsForCompletionRate() {
+        val data = listOf(
+            day(
+                date = "2026-07-01",
+                completed = mapOf(1L to true),
+                mood = 5,
+                expenseTotal = 20.0,
+                activeHabitIds = setOf(1L)
+            )
+        )
+
+        val insight = HeuristicDayClusterer().cluster(data, habitOrder)
+        assertEquals("BalancedDay", insight.assignments.first().label)
     }
 
     @Test
@@ -71,6 +120,32 @@ class BaselineAndComplexStrategyTest {
             it.variableA == "mood" && it.variableB == "expense_total"
         }
         assertTrue(moodExpense.coefficient > 0.8f)
+    }
+
+    @Test
+    fun apriori_skipsInactiveHabitsInsteadOfMarkingThemMissed() {
+        val data = listOf(
+            day(
+                date = "2026-07-01",
+                completed = mapOf(1L to true),
+                mood = 3,
+                expenseTotal = 20.0,
+                activeHabitIds = setOf(1L)
+            ),
+            day(
+                date = "2026-07-02",
+                completed = mapOf(1L to true, 2L to true),
+                mood = 4,
+                expenseTotal = 30.0,
+                activeHabitIds = setOf(1L, 2L)
+            )
+        )
+
+        val insight = AprioriCorrelationAnalyzer(minSupport = 0f, minConfidence = 0f)
+            .analyze(data, habitOrder)
+        val allRuleItems = insight.associationRules.flatMap { it.antecedent + it.consequent }
+
+        assertFalse(allRuleItems.contains("habit_2_miss"))
     }
 
     @Test

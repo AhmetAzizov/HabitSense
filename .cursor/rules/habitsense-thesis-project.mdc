@@ -33,13 +33,18 @@ Key files:
 
 ## Feature Pipeline (Completed Foundation)
 - `DailyData` aggregates one day across habits/mood/expenses
-- `DailyData.toFloatArray(habitOrder)` uses fixed feature ordering
-- `FeatureSchema.VERSION` validates ML input compatibility
+- `DailyData.activeHabitIds` distinguishes habits that existed on a date from habits that were missed
+- `DailyData.completionFor(habitId)` returns `null` when a habit was not active yet
+- Method-specific feature builders are preferred over one universal all-habits vector
+- `HabitPredictionFeatureBuilder` produces fixed-size per-habit TFLite inputs independent of total habit count
+- `ClusteringFeatureBuilder` produces fixed-size daily summary vectors for K-Means
+- `FeatureSchema.VERSION` validates legacy compatibility; prediction/clustering schemas define method-specific contracts
 
 Key files:
 - `app/src/main/java/com/azizov/habitsense/domain/model/DailyData.kt`
 - `app/src/main/java/com/azizov/habitsense/domain/model/FeatureSchema.kt`
 - `app/src/main/java/com/azizov/habitsense/data/repository/DailyDataRepository.kt`
+- `app/src/main/java/com/azizov/habitsense/domain/ai/feature/*`
 
 ## Synthetic Data (Completed Foundation)
 - Seeded generator populates 6–12 months of mock data with simple distributions
@@ -61,9 +66,9 @@ Baseline implementations:
 - Spearman correlation analyzer
 
 Complex implementations:
-- TFLite habit predictor (`app/src/main/assets/habit_predictor.tflite`, loaded via `FileUtil.loadMappedFile`)
-- Native Kotlin K-Means day clusterer
-- Apriori-style association rule analyzer
+- TFLite habit predictor (`app/src/main/assets/habit_predictor.tflite`, loaded via `FileUtil.loadMappedFile`) uses fixed-size per-habit inputs
+- Native Kotlin K-Means day clusterer uses fixed-size daily summary vectors
+- Apriori-style association rule analyzer skips inactive habits instead of marking them missed
 
 Switching:
 - `StrategyFactory` + `StrategyMode.BASELINE|COMPLEX`
@@ -79,7 +84,9 @@ Performance tracking:
 
 ## Implementation Rules for Future Work
 - Do not break `dateString` grouping semantics
+- Do not treat a habit as missed before its `createdAtDateString`
 - Keep analytics decoupled from ViewModels (domain inputs/outputs only)
-- Preserve feature schema versioning when changing ML inputs
+- Preserve feature schema versioning when changing ML inputs or builder semantics
+- Prefer method-specific feature builders for analytics inputs
 - Log strategy runtime/memory for thesis evaluation on complex paths
 - Prefer minimal, scoped changes; avoid unrelated refactors
