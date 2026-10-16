@@ -17,7 +17,8 @@ data class SyntheticGenerationResult(
     val moodLogCount: Int,
     val expenseLogCount: Int,
     val dayCount: Int,
-    val seed: Long
+    val seed: Long,
+    val profile: SyntheticDataProfile
 )
 
 class SyntheticDataGenerator(
@@ -40,13 +41,59 @@ class SyntheticDataGenerator(
             habitDao.deleteAll()
         }
 
-        val habits = ensureHabits(config)
+        val habits = ensureHabits(config, random)
         val habitLogs = mutableListOf<HabitLogEntity>()
         val moodLogs = mutableListOf<MoodLogEntity>()
         val expenseLogs = mutableListOf<ExpenseLogEntity>()
 
+        when (config.profile) {
+            SyntheticDataProfile.INDEPENDENT -> generateIndependent(
+                config = config,
+                dates = dates,
+                habits = habits,
+                random = random,
+                habitLogs = habitLogs,
+                moodLogs = moodLogs,
+                expenseLogs = expenseLogs
+            )
+            SyntheticDataProfile.ENRICHED -> generateEnriched(
+                config = config,
+                dates = dates,
+                habits = habits,
+                random = random,
+                habitLogs = habitLogs,
+                moodLogs = moodLogs,
+                expenseLogs = expenseLogs
+            )
+        }
+
+        habitLogDao.insertAll(habitLogs)
+        moodLogDao.insertAll(moodLogs)
+        expenseLogDao.insertAll(expenseLogs)
+
+        return SyntheticGenerationResult(
+            habitCount = habits.size,
+            habitLogCount = habitLogs.size,
+            moodLogCount = moodLogs.size,
+            expenseLogCount = expenseLogs.size,
+            dayCount = dates.size,
+            seed = config.seed,
+            profile = config.profile
+        )
+    }
+
+    private fun generateIndependent(
+        config: SyntheticDataConfig,
+        dates: List<String>,
+        habits: List<HabitEntity>,
+        random: Random,
+        habitLogs: MutableList<HabitLogEntity>,
+        moodLogs: MutableList<MoodLogEntity>,
+        expenseLogs: MutableList<ExpenseLogEntity>
+    ) {
         dates.forEach { dateString ->
-            habits.forEach { habit ->
+            val activeHabits = habits.activeOn(dateString)
+            activeHabits.forEach { habit ->
                 val completed = random.nextFloat() < config.habitCompletionProbability
                 habitLogs += HabitLogEntity(
                     habitId = habit.id,
@@ -75,34 +122,71 @@ class SyntheticDataGenerator(
                 }
             }
         }
+    }
 
-        habitLogDao.insertAll(habitLogs)
-        moodLogDao.insertAll(moodLogs)
-        expenseLogDao.insertAll(expenseLogs)
+    private fun generateEnriched(
+        config: SyntheticDataConfig,
+        dates: List<String>,
+        habits: List<HabitEntity>,
+        random: Random,
+        habitLogs: MutableList<HabitLogEntity>,
+        moodLogs: MutableList<MoodLogEntity>,
+        expenseLogs: MutableList<ExpenseLogEntity>
+    ) {
+        val profiles = SyntheticBehaviorEngine.buildHabitProfiles(habits, config, random)
+        val engine = SyntheticBehaviorEngine(config, profiles, random)
 
-        return SyntheticGenerationResult(
-            habitCount = habits.size,
-            habitLogCount = habitLogs.size,
-            moodLogCount = moodLogs.size,
-            expenseLogCount = expenseLogs.size,
-            dayCount = dates.size,
-            seed = config.seed
-        )
+        dates.forEach { dateString ->
+            val activeHabits = habits.activeOn(dateString)
+            val day = engine.simulateDay(dateString, activeHabits)
+
+            day.habitCompletions.forEach { (habitId, completed) ->
+                habitLogs += HabitLogEntity(
+                    habitId = habitId,
+                    dateString = dateString,
+                    completed = completed
+                )
+            }
+
+            day.mood?.let { mood ->
+                moodLogs += MoodLogEntity(dateString = dateString, mood = mood)
+            }
+
+            day.expenseAmounts.forEach { amount ->
+                expenseLogs += ExpenseLogEntity(
+                    dateString = dateString,
+                    amount = amount,
+                    note = null
+                )
+            }
+        }
     }
 
     private suspend fun ensureHabits(
-        config: SyntheticDataConfig
+        config: SyntheticDataConfig,
+        random: Random
     ): List<HabitEntity> {
         val existing = habitDao.getAll()
         if (existing.isNotEmpty()) return existing
 
-        val habits = config.defaultHabitNames.map { name ->
+        val habits = config.defaultHabitNames.mapIndexed { index, name ->
+            val createdAt = if (config.habitCreationStaggerDays <= 0) {
+                config.startDate
+            } else {
+                DateStringUtils.plusDays(
+                    config.startDate,
+                    index * config.habitCreationStaggerDays.toLong()
+                )
+            }
             HabitEntity(
                 name = name,
-                createdAtDateString = config.startDate
+                createdAtDateString = createdAt
             )
         }
         val ids = habitDao.insertAll(habits)
         return habits.mapIndexed { index, habit -> habit.copy(id = ids[index]) }
     }
+
+    private fun List<HabitEntity>.activeOn(dateString: String): List<HabitEntity> =
+        filter { habit -> habit.createdAtDateString <= dateString }
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import com.azizov.habitsense.data.local.DatabaseProvider
 import com.azizov.habitsense.data.local.HabitSenseDatabase
 import com.azizov.habitsense.data.repository.DailyDataRepository
+import com.azizov.habitsense.data.repository.HabitPredictionDatasetRepository
 import com.azizov.habitsense.data.synthetic.SyntheticDataGenerator
 import com.azizov.habitsense.domain.ai.StrategyExecutor
 import com.azizov.habitsense.domain.ai.StrategyFactory
@@ -24,6 +25,9 @@ class HabitSenseApplication : Application() {
     lateinit var strategyExecutor: StrategyExecutor
         private set
 
+    lateinit var habitPredictionDatasetRepository: HabitPredictionDatasetRepository
+        private set
+
     override fun onCreate() {
         super.onCreate()
         database = DatabaseProvider.get(this)
@@ -41,5 +45,6 @@ class HabitSenseApplication : Application() {
         )
         strategyFactory = StrategyFactory(this)
         strategyExecutor = StrategyExecutor(database.experimentRunDao())
+        habitPredictionDatasetRepository = HabitPredictionDatasetRepository(dailyDataRepository)
     }
 }

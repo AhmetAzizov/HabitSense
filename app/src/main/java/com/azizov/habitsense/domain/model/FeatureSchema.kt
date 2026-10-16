@@ -51,6 +51,12 @@ object HabitPredictionFeatureSchema {
     )
 
     const val DIMENSION = WINDOW_DAYS * FEATURES_PER_DAY
+
+    fun featureNames(): List<String> {
+        return (0 until WINDOW_DAYS).flatMap { dayIndex ->
+            FEATURE_NAMES_PER_DAY.map { name -> "d${dayIndex}_$name" }
+        }
+    }
 }
 
 object ClusteringFeatureSchema {

@@ -31,6 +31,8 @@ class TfliteHabitPredictor(
         Interpreter(modelBuffer)
     }.getOrNull()
 
+    val isModelLoaded: Boolean get() = interpreter != null
+
     override fun predict(
         history: List<DailyData>,
         targetDateString: String,

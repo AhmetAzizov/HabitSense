@@ -44,15 +44,19 @@ Key files:
 - `app/src/main/java/com/azizov/habitsense/domain/model/DailyData.kt`
 - `app/src/main/java/com/azizov/habitsense/domain/model/FeatureSchema.kt`
 - `app/src/main/java/com/azizov/habitsense/data/repository/DailyDataRepository.kt`
+- `app/src/main/java/com/azizov/habitsense/data/repository/HabitPredictionDatasetRepository.kt` (Room → labeled 42-dim rows, CSV/JSONL export)
 - `app/src/main/java/com/azizov/habitsense/domain/ai/feature/*`
+- `app/src/main/java/com/azizov/habitsense/domain/ai/dataset/*`
 
 ## Synthetic Data (Completed Foundation)
-- Seeded generator populates 6–12 months of mock data with simple distributions
+- Seeded generator populates 6–12 months of mock data
+- `SyntheticDataProfile.INDEPENDENT`: legacy i.i.d. completion; `ENRICHED` (default): mood persistence, mood-linked completion, streak bonus, weekday offsets, staggered habit `createdAtDateString`
 - Respects DB constraints (valid habit IDs, max one mood/day)
 
 Key files:
 - `app/src/main/java/com/azizov/habitsense/data/synthetic/SyntheticDataConfig.kt`
 - `app/src/main/java/com/azizov/habitsense/data/synthetic/SyntheticDataGenerator.kt`
+- `app/src/main/java/com/azizov/habitsense/data/synthetic/SyntheticBehaviorEngine.kt`
 
 ## AI Strategy Layer (Completed Foundation)
 Interfaces:
