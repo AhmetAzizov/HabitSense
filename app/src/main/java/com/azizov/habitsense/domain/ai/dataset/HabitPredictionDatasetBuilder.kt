@@ -13,14 +13,14 @@ class HabitPredictionDatasetBuilder(
 ) {
     fun build(
         dailyDataAscending: List<DailyData>,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): List<HabitPredictionTrainingExample> {
         requireDailyDataSorted(dailyDataAscending)
 
         val examples = mutableListOf<HabitPredictionTrainingExample>()
         dailyDataAscending.forEachIndexed { targetIndex, targetDay ->
             val history = dailyDataAscending.subList(0, targetIndex)
-            habitOrder.forEach { habitId ->
+            habitIds.forEach { habitId ->
                 if (!targetDay.isHabitActive(habitId)) return@forEach
                 val completed = targetDay.completionFor(habitId) ?: return@forEach
                 val features = featureBuilder.build(history, habitId)

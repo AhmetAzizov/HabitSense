@@ -4,7 +4,6 @@ import com.azizov.habitsense.data.local.dao.ExperimentRunDao
 import com.azizov.habitsense.data.local.entity.ExperimentRunEntity
 import com.azizov.habitsense.domain.ai.model.PerformanceMetrics
 import com.azizov.habitsense.domain.ai.model.StrategyExecutionResult
-import com.azizov.habitsense.domain.model.FeatureSchema
 import org.json.JSONObject
 
 class StrategyExecutor(
@@ -13,6 +12,7 @@ class StrategyExecutor(
     suspend fun <T> executeAndLog(
         strategyName: String,
         strategyVersion: String,
+        featureSchemaVersion: Int,
         inputStartDate: String,
         inputEndDate: String,
         parameters: Map<String, Any> = emptyMap(),
@@ -24,7 +24,7 @@ class StrategyExecutor(
             ExperimentRunEntity(
                 strategyName = strategyName,
                 strategyVersion = strategyVersion,
-                featureSchemaVersion = FeatureSchema.VERSION,
+                featureSchemaVersion = featureSchemaVersion,
                 inputStartDate = inputStartDate,
                 inputEndDate = inputEndDate,
                 parametersJson = JSONObject(parameters).toString(),

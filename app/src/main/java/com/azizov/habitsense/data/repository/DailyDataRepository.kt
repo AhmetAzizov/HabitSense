@@ -15,7 +15,7 @@ class DailyDataRepository(
     private val moodLogDao: MoodLogDao,
     private val expenseLogDao: ExpenseLogDao
 ) {
-    suspend fun getHabitOrder(): List<Long> = habitDao.getAll().map { it.id }
+    suspend fun getHabitIds(): List<Long> = habitDao.getAll().map { it.id }
 
     suspend fun buildDailyData(dateString: String): DailyData {
         val habits = habitDao.getAll()
@@ -49,7 +49,6 @@ class DailyDataRepository(
         return buildDailyDataRange(startDate, endDate)
     }
 
-    // ask why habitOrder is injected into the function instead of calling getHabitOrder()
     private suspend fun buildDailyDataForDate(dateString: String, habits: List<HabitEntity>): DailyData {
         val habitLogs = habitLogDao.getByDate(dateString)
         val mood = moodLogDao.getByDate(dateString)?.mood

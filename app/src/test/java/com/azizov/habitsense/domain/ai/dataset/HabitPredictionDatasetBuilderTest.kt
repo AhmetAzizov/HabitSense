@@ -10,7 +10,7 @@ import org.junit.Test
 
 class HabitPredictionDatasetBuilderTest {
     private val builder = HabitPredictionDatasetBuilder()
-    private val habitOrder = listOf(1L, 2L)
+    private val habitIds = listOf(1L, 2L)
 
     private fun day(
         date: String,
@@ -34,7 +34,7 @@ class HabitPredictionDatasetBuilderTest {
             day("2026-07-02", mapOf(1L to true), activeHabitIds = setOf(1L))
         )
 
-        val examples = builder.build(daily, habitOrder)
+        val examples = builder.build(daily, habitIds)
         assertEquals(2, examples.size)
         assertTrue(examples.all { it.habitId == 1L })
     }
@@ -47,7 +47,7 @@ class HabitPredictionDatasetBuilderTest {
         )
         val featureBuilder = HabitPredictionFeatureBuilder()
 
-        val examples = builder.build(daily, habitOrder)
+        val examples = builder.build(daily, habitIds)
         val targetExample = examples.first { it.targetDateString == "2026-07-02" && it.habitId == 1L }
 
         val expected = featureBuilder.build(daily.subList(0, 1), 1L)
@@ -62,7 +62,7 @@ class HabitPredictionDatasetBuilderTest {
             day("2026-07-02", mapOf(1L to true))
         )
 
-        val examples = builder.build(daily, habitOrder)
+        val examples = builder.build(daily, habitIds)
         assertEquals(HabitPredictionFeatureSchema.DIMENSION, examples.first().features.size)
     }
 }

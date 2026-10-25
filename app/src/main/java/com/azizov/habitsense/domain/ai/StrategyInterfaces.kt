@@ -1,5 +1,7 @@
 package com.azizov.habitsense.domain.ai
 
+import com.azizov.habitsense.domain.ai.model.CorrelationInsight
+import com.azizov.habitsense.domain.ai.model.DayClusterInsight
 import com.azizov.habitsense.domain.ai.model.HabitPredictionInsight
 import com.azizov.habitsense.domain.model.DailyData
 
@@ -14,7 +16,7 @@ interface HabitPredictor {
     fun predict(
         history: List<DailyData>,
         targetDateString: String,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): HabitPredictionInsight
 }
 
@@ -24,8 +26,8 @@ interface DayClusterer {
 
     fun cluster(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
-    ): com.azizov.habitsense.domain.ai.model.DayClusterInsight
+        habitIds: List<Long>
+    ): DayClusterInsight
 }
 
 interface CorrelationAnalyzer {
@@ -34,6 +36,6 @@ interface CorrelationAnalyzer {
 
     fun analyze(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
-    ): com.azizov.habitsense.domain.ai.model.CorrelationInsight
+        habitIds: List<Long>
+    ): CorrelationInsight
 }

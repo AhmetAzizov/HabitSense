@@ -37,7 +37,7 @@ DailyDataRepository  →  one DailyData per dateString (active habits, mood, exp
 
 - `history` = all days **before** target date (from `buildDailyDataRange` or trailing window).
 - `targetDateString` = day you predict (usually “tomorrow” or a chosen eval date).
-- `habitOrder` = `getHabitOrder()`.
+- `habitIds` = `getHabitIds()`.
 
 ## Training vs on-device
 

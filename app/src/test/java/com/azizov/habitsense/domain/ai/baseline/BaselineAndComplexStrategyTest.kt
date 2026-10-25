@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BaselineAndComplexStrategyTest {
-    private val habitOrder = listOf(1L, 2L)
+    private val habitIds = listOf(1L, 2L)
 
     private fun day(
         date: String,
@@ -37,7 +37,7 @@ class BaselineAndComplexStrategyTest {
         val insight = MovingAverageHabitPredictor(windowDays = 3).predict(
             history = history,
             targetDateString = "2026-07-04",
-            habitOrder = habitOrder
+            habitIds = habitIds
         )
 
         val habit1 = insight.predictions.first { it.habitId == 1L }
@@ -68,7 +68,7 @@ class BaselineAndComplexStrategyTest {
         val insight = MovingAverageHabitPredictor(windowDays = 2).predict(
             history = history,
             targetDateString = "2026-07-03",
-            habitOrder = habitOrder
+            habitIds = habitIds
         )
 
         val habit2 = insight.predictions.first { it.habitId == 2L }
@@ -82,7 +82,7 @@ class BaselineAndComplexStrategyTest {
             day("2026-07-02", mapOf(1L to false, 2L to false), 2, 200.0)
         )
 
-        val insight = HeuristicDayClusterer().cluster(data, habitOrder)
+        val insight = HeuristicDayClusterer().cluster(data, habitIds)
         assertEquals(2, insight.assignments.size)
         assertTrue(insight.assignments.any { it.label == "BalancedDay" })
         assertTrue(insight.assignments.any { it.label == "StressedSpendingDay" })
@@ -100,7 +100,7 @@ class BaselineAndComplexStrategyTest {
             )
         )
 
-        val insight = HeuristicDayClusterer().cluster(data, habitOrder)
+        val insight = HeuristicDayClusterer().cluster(data, habitIds)
         assertEquals("BalancedDay", insight.assignments.first().label)
     }
 
@@ -115,7 +115,7 @@ class BaselineAndComplexStrategyTest {
             )
         }
 
-        val insight = SpearmanCorrelationAnalyzer().analyze(data, habitOrder)
+        val insight = SpearmanCorrelationAnalyzer().analyze(data, habitIds)
         val moodExpense = insight.pairwiseCorrelations.first {
             it.variableA == "mood" && it.variableB == "expense_total"
         }
@@ -142,7 +142,7 @@ class BaselineAndComplexStrategyTest {
         )
 
         val insight = AprioriCorrelationAnalyzer(minSupport = 0f, minConfidence = 0f)
-            .analyze(data, habitOrder)
+            .analyze(data, habitIds)
         val allRuleItems = insight.associationRules.flatMap { it.antecedent + it.consequent }
 
         assertFalse(allRuleItems.contains("habit_2_miss"))
@@ -156,7 +156,7 @@ class BaselineAndComplexStrategyTest {
             day("2026-07-03", mapOf(1L to true, 2L to false), 3, 40.0)
         )
 
-        val insight = KMeansDayClusterer(k = 2).cluster(data, habitOrder)
+        val insight = KMeansDayClusterer(k = 2).cluster(data, habitIds)
         assertEquals(3, insight.assignments.size)
         assertTrue(insight.assignments.all { it.clusterId in 0..1 })
     }

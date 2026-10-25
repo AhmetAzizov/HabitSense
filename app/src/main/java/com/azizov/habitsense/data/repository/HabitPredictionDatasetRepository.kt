@@ -25,8 +25,8 @@ class HabitPredictionDatasetRepository(
         endDate: String
     ): List<HabitPredictionTrainingExample> {
         val dailyData = dailyDataRepository.buildDailyDataRange(startDate, endDate)
-        val habitOrder = dailyDataRepository.getHabitOrder()
-        return datasetBuilder.build(dailyData, habitOrder)
+        val habitIds = dailyDataRepository.getHabitIds()
+        return datasetBuilder.build(dailyData, habitIds)
     }
 
     suspend fun export(request: HabitPredictionDatasetExportRequest): HabitPredictionDatasetExportResult {

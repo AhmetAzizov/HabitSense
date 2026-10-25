@@ -22,10 +22,10 @@ class MovingAverageHabitPredictor(
     override fun predict(
         history: List<DailyData>,
         targetDateString: String,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): HabitPredictionInsight {
         val trailing = history.takeLast(windowDays)
-        val predictions = habitOrder.map { habitId ->
+        val predictions = habitIds.map { habitId ->
             val activeHistory = trailing.mapNotNull { day -> day.completionFor(habitId) }
             val rate = if (activeHistory.isEmpty()) {
                 0.5f
@@ -55,7 +55,7 @@ class HeuristicDayClusterer : DayClusterer {
 
     override fun cluster(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): DayClusterInsight {
         val assignments = dailyData.map { day ->
             val completionRate = day.activeHabitCompletionRate()
@@ -96,7 +96,7 @@ class SpearmanCorrelationAnalyzer : CorrelationAnalyzer {
 
     override fun analyze(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): CorrelationInsight {
         if (dailyData.size < 3) {
             return CorrelationInsight(
@@ -106,7 +106,7 @@ class SpearmanCorrelationAnalyzer : CorrelationAnalyzer {
             )
         }
 
-        val variableSeries = buildVariableSeries(dailyData, habitOrder)
+        val variableSeries = buildVariableSeries(dailyData, habitIds)
         val pairs = mutableListOf<CorrelationPair>()
 
         for (i in variableSeries.indices) {
@@ -142,7 +142,7 @@ class SpearmanCorrelationAnalyzer : CorrelationAnalyzer {
 
     private fun buildVariableSeries(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): List<Series> {
         val series = mutableListOf<Series>()
         series += Series(
@@ -162,7 +162,7 @@ class SpearmanCorrelationAnalyzer : CorrelationAnalyzer {
             valuesByDate = dailyData.associate { it.dateString to it.activeHabitCompletionRate() }
         )
 
-        habitOrder.forEach { habitId ->
+        habitIds.forEach { habitId ->
             val valuesByDate = dailyData.mapNotNull { day ->
                 day.completionFor(habitId)?.let { completed ->
                     day.dateString to if (completed) 1f else 0f

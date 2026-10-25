@@ -36,15 +36,15 @@ class TfliteHabitPredictor(
     override fun predict(
         history: List<DailyData>,
         targetDateString: String,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): HabitPredictionInsight {
         val trailing = history.takeLast(windowDays)
         val model = interpreter
         if (model == null || trailing.isEmpty()) {
-            return fallbackMovingAverage(trailing, targetDateString, habitOrder)
+            return fallbackMovingAverage(trailing, targetDateString, habitIds)
         }
 
-        val predictions = habitOrder.map { habitId ->
+        val predictions = habitIds.map { habitId ->
             val probability = runCatching {
                 val input = arrayOf(featureBuilder.build(trailing, habitId))
                 val output = Array(1) { FloatArray(1) }
@@ -71,9 +71,9 @@ class TfliteHabitPredictor(
     private fun fallbackMovingAverage(
         trailing: List<DailyData>,
         targetDateString: String,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): HabitPredictionInsight {
-        val predictions = habitOrder.map { habitId ->
+        val predictions = habitIds.map { habitId ->
             val rate = fallbackProbability(trailing, habitId)
             HabitPrediction(
                 habitId = habitId,
@@ -110,7 +110,7 @@ class KMeansDayClusterer(
 
     override fun cluster(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): DayClusterInsight {
         if (dailyData.isEmpty()) {
             return DayClusterInsight(
@@ -211,7 +211,7 @@ class AprioriCorrelationAnalyzer(
 
     override fun analyze(
         dailyData: List<DailyData>,
-        habitOrder: List<Long>
+        habitIds: List<Long>
     ): CorrelationInsight {
         if (dailyData.isEmpty()) {
             return CorrelationInsight(
@@ -222,7 +222,7 @@ class AprioriCorrelationAnalyzer(
             )
         }
 
-        val transactions = dailyData.map { day -> dayToItems(day, habitOrder) }
+        val transactions = dailyData.map { day -> dayToItems(day, habitIds) }
         val itemCount = transactions.flatten().groupingBy { it }.eachCount()
         val total = transactions.size.toFloat()
 
@@ -260,9 +260,9 @@ class AprioriCorrelationAnalyzer(
         )
     }
 
-    private fun dayToItems(day: DailyData, habitOrder: List<Long>): Set<String> {
+    private fun dayToItems(day: DailyData, habitIds: List<Long>): Set<String> {
         val items = mutableSetOf<String>()
-        habitOrder.forEach { habitId ->
+        habitIds.forEach { habitId ->
             when (day.completionFor(habitId)) {
                 true -> items += "habit_${habitId}_done"
                 false -> items += "habit_${habitId}_miss"

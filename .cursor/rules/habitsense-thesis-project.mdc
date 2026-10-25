@@ -38,7 +38,7 @@ Key files:
 - Method-specific feature builders are preferred over one universal all-habits vector
 - `HabitPredictionFeatureBuilder` produces fixed-size per-habit TFLite inputs independent of total habit count
 - `ClusteringFeatureBuilder` produces fixed-size daily summary vectors for K-Means
-- `FeatureSchema.VERSION` validates legacy compatibility; prediction/clustering schemas define method-specific contracts
+- `HabitPredictionFeatureSchema` and `ClusteringFeatureSchema` define method-specific feature contracts (versions logged per strategy run)
 
 Key files:
 - `app/src/main/java/com/azizov/habitsense/domain/model/DailyData.kt`

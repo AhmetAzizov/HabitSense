@@ -76,8 +76,8 @@ class StrategyPipelineInstrumentedTest {
         assertTrue(earlyDay.isHabitActive(1L))
         assertTrue(earlyDay.activeHabitIds.size < 4)
 
-        val habitOrder = dailyDataRepository.getHabitOrder()
-        assertEquals(4, habitOrder.size)
+        val habitIds = dailyDataRepository.getHabitIds()
+        assertEquals(4, habitIds.size)
     }
 
     @Test
@@ -92,7 +92,7 @@ class StrategyPipelineInstrumentedTest {
     @Test
     fun baselineStrategies_runOnRepositoryData() = runBlocking {
         seedShortEnrichedDataset()
-        val habitOrder = dailyDataRepository.getHabitOrder()
+        val habitIds = dailyDataRepository.getHabitIds()
         val dailyRange = dailyDataRepository.buildDailyDataRange("2026-01-01", "2026-03-31")
         val targetDate = dailyRange.last().dateString
         val history = dailyRange.dropLast(1)
@@ -100,23 +100,23 @@ class StrategyPipelineInstrumentedTest {
         val prediction = strategyFactory.habitPredictor(StrategyMode.BASELINE).predict(
             history = history,
             targetDateString = targetDate,
-            habitOrder = habitOrder
+            habitIds = habitIds
         )
-        assertEquals(habitOrder.size, prediction.predictions.size)
+        assertEquals(habitIds.size, prediction.predictions.size)
         assertTrue(prediction.predictions.all { it.probabilityComplete in 0f..1f })
 
-        val clusters = strategyFactory.dayClusterer(StrategyMode.BASELINE).cluster(dailyRange, habitOrder)
+        val clusters = strategyFactory.dayClusterer(StrategyMode.BASELINE).cluster(dailyRange, habitIds)
         assertEquals(dailyRange.size, clusters.assignments.size)
 
         val correlations = strategyFactory.correlationAnalyzer(StrategyMode.BASELINE)
-            .analyze(dailyRange, habitOrder)
+            .analyze(dailyRange, habitIds)
         assertTrue(correlations.pairwiseCorrelations.isNotEmpty())
     }
 
     @Test
     fun complexStrategies_runIncludingTfliteModel() = runBlocking {
         seedShortEnrichedDataset()
-        val habitOrder = dailyDataRepository.getHabitOrder()
+        val habitIds = dailyDataRepository.getHabitIds()
         val dailyRange = dailyDataRepository.buildDailyDataRange("2026-01-01", "2026-03-31")
         val targetDate = dailyRange.last().dateString
         val history = dailyRange.dropLast(1)
@@ -127,24 +127,24 @@ class StrategyPipelineInstrumentedTest {
         val prediction = tflitePredictor.predict(
             history = history,
             targetDateString = targetDate,
-            habitOrder = habitOrder
+            habitIds = habitIds
         )
-        assertEquals(habitOrder.size, prediction.predictions.size)
+        assertEquals(habitIds.size, prediction.predictions.size)
         assertTrue(prediction.predictions.all { it.probabilityComplete in 0f..1f })
         tflitePredictor.close()
 
-        val clusters = strategyFactory.dayClusterer(StrategyMode.COMPLEX).cluster(dailyRange, habitOrder)
+        val clusters = strategyFactory.dayClusterer(StrategyMode.COMPLEX).cluster(dailyRange, habitIds)
         assertEquals(dailyRange.size, clusters.assignments.size)
         assertTrue(clusters.assignments.all { it.clusterId >= 0 })
 
-        val rules = strategyFactory.correlationAnalyzer(StrategyMode.COMPLEX).analyze(dailyRange, habitOrder)
+        val rules = strategyFactory.correlationAnalyzer(StrategyMode.COMPLEX).analyze(dailyRange, habitIds)
         assertNotNull(rules.associationRules)
     }
 
     @Test
     fun strategyExecutor_logsExperimentRunForComplexPrediction() = runBlocking {
         seedShortEnrichedDataset()
-        val habitOrder = dailyDataRepository.getHabitOrder()
+        val habitIds = dailyDataRepository.getHabitIds()
         val startDate = "2026-01-01"
         val endDate = "2026-03-31"
         val history = dailyDataRepository.buildDailyDataRange(
@@ -158,11 +158,12 @@ class StrategyPipelineInstrumentedTest {
         val execution = strategyExecutor.executeAndLog(
             strategyName = predictor.strategyName,
             strategyVersion = predictor.strategyVersion,
+            featureSchemaVersion = HabitPredictionFeatureSchema.VERSION,
             inputStartDate = startDate,
             inputEndDate = endDate,
             parameters = mapOf("mode" to StrategyMode.COMPLEX.name)
         ) {
-            predictor.predict(history, targetDate, habitOrder)
+            predictor.predict(history, targetDate, habitIds)
         }
 
         assertEquals(runsBefore + 1, database.experimentRunDao().getAll().size)
@@ -192,7 +193,7 @@ class StrategyPipelineInstrumentedTest {
     @Test
     fun baselineMovingAverage_matchesIndependentCalculation() = runBlocking {
         seedShortEnrichedDataset()
-        val habitOrder = dailyDataRepository.getHabitOrder()
+        val habitIds = dailyDataRepository.getHabitIds()
         val dailyRange = dailyDataRepository.buildDailyDataRange("2026-01-01", "2026-03-31")
         val targetDate = "2026-03-20"
         val history = dailyRange.filter { it.dateString < targetDate }
@@ -200,10 +201,10 @@ class StrategyPipelineInstrumentedTest {
         val insight = strategyFactory.habitPredictor(StrategyMode.BASELINE).predict(
             history = history,
             targetDateString = targetDate,
-            habitOrder = habitOrder
+            habitIds = habitIds
         )
 
-        habitOrder.forEach { habitId ->
+        habitIds.forEach { habitId ->
             val expected = PipelineTestSupport.expectedMovingAverage(history, habitId)
             val actual = insight.predictions.first { it.habitId == habitId }.probabilityComplete
             assertEquals(expected, actual, 0.0001f)
@@ -213,7 +214,7 @@ class StrategyPipelineInstrumentedTest {
     @Test
     fun heuristicClusterer_labelsMatchRuleDefinitions() = runBlocking {
         seedShortEnrichedDataset()
-        val habitOrder = dailyDataRepository.getHabitOrder()
+        val habitIds = dailyDataRepository.getHabitIds()
         val clusterer = HeuristicDayClusterer()
 
         val balancedDay = DailyData(
@@ -226,7 +227,7 @@ class StrategyPipelineInstrumentedTest {
         )
         assertEquals(
             "BalancedDay",
-            clusterer.cluster(listOf(balancedDay), habitOrder).assignments.single().label
+            clusterer.cluster(listOf(balancedDay), habitIds).assignments.single().label
         )
 
         val stressedDay = DailyData(
@@ -239,14 +240,14 @@ class StrategyPipelineInstrumentedTest {
         )
         assertEquals(
             "StressedSpendingDay",
-            clusterer.cluster(listOf(stressedDay), habitOrder).assignments.single().label
+            clusterer.cluster(listOf(stressedDay), habitIds).assignments.single().label
         )
 
         val dailyRange = dailyDataRepository.buildDailyDataRange("2026-01-01", "2026-03-31")
         dailyRange.forEach { day ->
             val mood = day.mood
             if (mood != null && mood >= 4 && day.expenseTotal < 50 && day.activeHabitCompletionRate() >= 0.7f) {
-                val label = clusterer.cluster(listOf(day), habitOrder).assignments.single().label
+                val label = clusterer.cluster(listOf(day), habitIds).assignments.single().label
                 assertEquals("BalancedDay", label)
             }
         }
@@ -259,7 +260,7 @@ class StrategyPipelineInstrumentedTest {
     @Test
     fun insightsWorkflow_multiDayPrediction_beatsRandomOnEnrichedSeed() = runBlocking {
         seedShortEnrichedDataset()
-        val habitOrder = dailyDataRepository.getHabitOrder()
+        val habitIds = dailyDataRepository.getHabitIds()
         val dailyRange = dailyDataRepository.buildDailyDataRange("2026-01-01", "2026-03-31")
         val evalStart = "2026-03-01"
 
@@ -277,8 +278,8 @@ class StrategyPipelineInstrumentedTest {
                 val history = dailyRange.filter { it.dateString < targetDay.dateString }
                 if (history.isEmpty()) return@forEach
 
-                val baseline = baselinePredictor.predict(history, targetDay.dateString, habitOrder)
-                val complex = complexPredictor.predict(history, targetDay.dateString, habitOrder)
+                val baseline = baselinePredictor.predict(history, targetDay.dateString, habitIds)
+                val complex = complexPredictor.predict(history, targetDay.dateString, habitIds)
 
                 val (baseOk, baseN) = PipelineTestSupport.predictionAccuracy(baseline.predictions, targetDay)
                 val (cxOk, cxN) = PipelineTestSupport.predictionAccuracy(complex.predictions, targetDay)
