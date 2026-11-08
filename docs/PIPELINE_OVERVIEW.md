@@ -22,8 +22,19 @@ DailyDataRepository  →  one DailyData per dateString (active habits, mood, exp
 | Rule | Meaning |
 |------|--------|
 | `dateString` | Primary key for grouping (`YYYY-MM-DD`). |
-| `activeHabitIds` | Habit exists only if `createdAtDateString <= date`. |
+| `activeHabitIds` | Habit exists only if `HabitEntity.createdAtDateString <= date`. |
 | `completionFor(habitId)` | `null` = not active that day; `false` = active but not done. |
+
+`DailyDataRepository` builds `activeHabitIds` per day from habit creation dates; it does not embed a global habit ordering.
+
+## Habit IDs vs active habits
+
+| API | Role |
+|-----|------|
+| `getHabitIds()` | All habit IDs currently in Room (`habitDao.getAll()`). Used to loop “which habits exist in the app.” Order is not part of the ML contract. |
+| `DailyData.activeHabitIds` | Per-day subset that existed on that `dateString`. Used for misses vs not-created-yet and for active-aware rates/features. |
+
+Feature vectors come from **method-specific builders** (`HabitPredictionFeatureBuilder`, `ClusteringFeatureBuilder`), not from a single all-habits vector on `DailyData`. Schemas live in `FeatureSchema.kt` as `HabitPredictionFeatureSchema` (42-dim) and `ClusteringFeatureSchema` (6-dim).
 
 ## Six strategies (same inputs, different algorithms)
 
@@ -33,11 +44,15 @@ DailyDataRepository  →  one DailyData per dateString (active habits, mood, exp
 | Day “types” | Fixed rules (`BalancedDay`, …) | K-Means on 6-dim daily vector |
 | Relationships | Spearman correlations | Apriori-style association rules |
 
-**Prediction call shape (what Insights will do):**
+**Strategy call shape (what Insights will do):**
 
-- `history` = all days **before** target date (from `buildDailyDataRange` or trailing window).
-- `targetDateString` = day you predict (usually “tomorrow” or a chosen eval date).
-- `habitIds` = `getHabitIds()`.
+1. `dailyRange` = `buildDailyDataRange(start, end)` (or trailing window).
+2. `habitIds` = `getHabitIds()`.
+3. **Predict:** `history` = days strictly before `targetDateString`; `habitPredictor.predict(history, targetDateString, habitIds)`.
+4. **Cluster:** `dayClusterer.cluster(dailyRange, habitIds)` (clusterers use fixed daily features; `habitIds` is for API consistency).
+5. **Correlate:** `correlationAnalyzer.analyze(dailyRange, habitIds)` (inactive days skipped via `completionFor`).
+
+**Experiment logging:** wrap a strategy call in `StrategyExecutor.executeAndLog(..., featureSchemaVersion = …)` — use `HabitPredictionFeatureSchema.VERSION` for TFLite prediction runs, or the schema that matches the task.
 
 ## Training vs on-device
 
@@ -52,15 +67,15 @@ DailyDataRepository  →  one DailyData per dateString (active habits, mood, exp
 | Level | Meaning |
 |-------|--------|
 | **Smoke** | Strategies run; TFLite loads; experiment row inserted. |
-| **Correctness** | Dataset labels match Room; moving average matches hand calculation; heuristic rules match days that satisfy them; multi-day prediction eval beats random guessing on seeded enriched data. |
+| **Correctness** | Dataset labels match Room; moving average matches hand calculation; heuristic rules match days that satisfy them; multi-day prediction eval beats random guessing on seeded enriched data; a habit created later stays inactive on earlier dates even if a log exists. |
 
 androidTest is **not** the thesis results chapter (no published baseline-vs-complex tables). It is a **safety net** that the finished app’s brain behaves consistently before you wire Compose screens.
 
 ## Typical real-user flow (what UI will mirror)
 
 1. User logs habits/mood/expenses (Today tab → Room).
-2. Insights loads `buildDailyDataRange(start, end)`.
+2. Insights loads `buildDailyDataRange(start, end)` and `getHabitIds()`.
 3. User picks strategy mode (or app defaults): predict / cluster / correlate.
-4. Optional: `StrategyExecutor` logs the run for thesis metrics later.
+4. Optional: `StrategyExecutor` logs the run (with the appropriate `featureSchemaVersion`) for thesis metrics later.
 
-Synthetic seed + export button in `MainActivity` is a **dev shortcut** for step 1–2 without UI.
+Synthetic seed + export button in `MainActivity` is a **dev shortcut** for step 1–2 without full product UI.

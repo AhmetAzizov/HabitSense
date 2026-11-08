@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.azizov.habitsense.data.local.HabitSenseDatabase
+import com.azizov.habitsense.data.local.entity.HabitEntity
+import com.azizov.habitsense.data.local.entity.HabitLogEntity
 import com.azizov.habitsense.data.repository.DailyDataRepository
 import com.azizov.habitsense.data.repository.HabitPredictionDatasetRepository
 import com.azizov.habitsense.data.synthetic.SyntheticDataConfig
@@ -15,6 +17,7 @@ import com.azizov.habitsense.domain.ai.StrategyFactory
 import com.azizov.habitsense.domain.ai.StrategyMode
 import com.azizov.habitsense.domain.ai.baseline.HeuristicDayClusterer
 import com.azizov.habitsense.domain.ai.complex.TfliteHabitPredictor
+import com.azizov.habitsense.domain.ai.dataset.HabitPredictionDatasetBuilder
 import com.azizov.habitsense.domain.model.DailyData
 import com.azizov.habitsense.domain.model.HabitPredictionFeatureSchema
 import com.azizov.habitsense.domain.util.DateStringUtils
@@ -22,7 +25,9 @@ import com.azizov.habitsense.support.PipelineTestSupport
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -296,6 +301,52 @@ class StrategyPipelineInstrumentedTest {
         assertTrue("TFLite should beat random on structured seed (got $complexRate)", complexRate > 0.55f)
 
         complexPredictor.close()
+    }
+
+    @Test
+    fun repository_keepsLaterHabitsInactiveOnEarlierDates() = runBlocking {
+        val earlyId = database.habitDao().insert(
+            HabitEntity(name = "Early", createdAtDateString = "2026-01-01")
+        )
+        val lateId = database.habitDao().insert(
+            HabitEntity(name = "Late", createdAtDateString = "2026-01-03")
+        )
+        database.habitLogDao().insert(
+            HabitLogEntity(habitId = earlyId, dateString = "2026-01-01", completed = true)
+        )
+        database.habitLogDao().insert(
+            HabitLogEntity(habitId = lateId, dateString = "2026-01-01", completed = true)
+        )
+        database.habitLogDao().insert(
+            HabitLogEntity(habitId = lateId, dateString = "2026-01-03", completed = false)
+        )
+
+        val habitIds = dailyDataRepository.getHabitIds()
+        val days = dailyDataRepository.buildDailyDataRange("2026-01-01", "2026-01-03")
+        assertEquals(listOf(earlyId, lateId), habitIds)
+
+        val beforeLateHabit = days.first { it.dateString == "2026-01-01" }
+        assertEquals(setOf(earlyId), beforeLateHabit.activeHabitIds)
+        assertEquals(true, beforeLateHabit.completionFor(earlyId))
+        assertNull(beforeLateHabit.completionFor(lateId))
+
+        val gapDay = days.first { it.dateString == "2026-01-02" }
+        assertEquals(false, gapDay.completionFor(earlyId))
+        assertNull(gapDay.completionFor(lateId))
+
+        val lateStart = days.first { it.dateString == "2026-01-03" }
+        assertEquals(setOf(earlyId, lateId), lateStart.activeHabitIds)
+        assertEquals(false, lateStart.completionFor(earlyId))
+        assertEquals(false, lateStart.completionFor(lateId))
+
+        val examples = HabitPredictionDatasetBuilder().build(days, habitIds)
+        assertTrue(examples.none { it.habitId == lateId && it.targetDateString < "2026-01-03" })
+        val lateExample = examples.single { it.habitId == lateId && it.targetDateString == "2026-01-03" }
+        assertFalse(lateExample.label)
+        val inactive = HabitPredictionFeatureSchema.FEATURE_NAMES_PER_DAY.indexOf("target_habit_inactive_or_missing")
+        val lastDay = HabitPredictionFeatureSchema.WINDOW_DAYS - 1
+        assertEquals(1f, lateExample.features[(lastDay - 1) * HabitPredictionFeatureSchema.FEATURES_PER_DAY + inactive], 0.0001f)
+        assertEquals(1f, lateExample.features[lastDay * HabitPredictionFeatureSchema.FEATURES_PER_DAY + inactive], 0.0001f)
     }
 
     private suspend fun seedShortEnrichedDataset() {

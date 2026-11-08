@@ -38,11 +38,12 @@ Key files:
 - Method-specific feature builders are preferred over one universal all-habits vector
 - `HabitPredictionFeatureBuilder` produces fixed-size per-habit TFLite inputs independent of total habit count
 - `ClusteringFeatureBuilder` produces fixed-size daily summary vectors for K-Means
-- `HabitPredictionFeatureSchema` and `ClusteringFeatureSchema` define method-specific feature contracts (versions logged per strategy run)
+- `HabitPredictionFeatureSchema` and `ClusteringFeatureSchema` (in `FeatureSchema.kt`) define method-specific feature contracts; there is no variable-size all-habits vector on `DailyData`
+- `DailyDataRepository.getHabitIds()` returns every habit ID in Room; list order is not a feature contract—callers use it to enumerate habits for predictions, dataset rows, and correlation items
 
 Key files:
 - `app/src/main/java/com/azizov/habitsense/domain/model/DailyData.kt`
-- `app/src/main/java/com/azizov/habitsense/domain/model/FeatureSchema.kt`
+- `app/src/main/java/com/azizov/habitsense/domain/model/FeatureSchema.kt` (`HabitPredictionFeatureSchema`, `ClusteringFeatureSchema`)
 - `app/src/main/java/com/azizov/habitsense/data/repository/DailyDataRepository.kt`
 - `app/src/main/java/com/azizov/habitsense/data/repository/HabitPredictionDatasetRepository.kt` (Room → labeled 42-dim rows, CSV/JSONL export)
 - `app/src/main/java/com/azizov/habitsense/domain/ai/feature/*`
@@ -59,9 +60,9 @@ Key files:
 - `app/src/main/java/com/azizov/habitsense/data/synthetic/SyntheticBehaviorEngine.kt`
 
 ## AI Strategy Layer (Completed Foundation)
-Interfaces:
+Interfaces (each takes `habitIds: List<Long>` plus `DailyData` history or range):
 - `HabitPredictor` (per-habit tomorrow prediction)
-- `DayClusterer`
+- `DayClusterer` (heuristic/K-Means ignore `habitIds` internally; parameter keeps a uniform API)
 - `CorrelationAnalyzer`
 
 Baseline implementations:
@@ -79,7 +80,7 @@ Switching:
 
 Performance tracking:
 - `PerformanceProbe` captures execution time/memory
-- `StrategyExecutor` persists runs in `ExperimentRunEntity`
+- `StrategyExecutor.executeAndLog(..., featureSchemaVersion, ...)` persists runs in `ExperimentRunEntity`; pass the schema version that matches the run (e.g. `HabitPredictionFeatureSchema.VERSION` for TFLite prediction)
 
 ## Planned UI Direction (Not Yet Implemented)
 - Today tab: fast daily input
