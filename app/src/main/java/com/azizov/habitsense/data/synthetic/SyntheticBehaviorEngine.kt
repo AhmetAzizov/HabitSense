@@ -3,6 +3,8 @@ package com.azizov.habitsense.data.synthetic
 import com.azizov.habitsense.data.local.entity.HabitEntity
 import com.azizov.habitsense.domain.util.DateStringUtils
 import kotlin.math.exp
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.random.Random
 import java.time.DayOfWeek
 
@@ -27,7 +29,7 @@ internal class SyntheticBehaviorEngine(
     private val habitProfiles: Map<Long, HabitBehaviorProfile>,
     private val random: Random
 ) {
-    private var previousMood: Int? = null
+    private var latentMood: Float? = null
     private val completionStreakByHabit = mutableMapOf<Long, Int>()
 
     fun simulateDay(dateString: String, activeHabits: List<HabitEntity>): SimulatedDay {
@@ -53,18 +55,23 @@ internal class SyntheticBehaviorEngine(
     }
 
     private fun sampleMood(): Int? {
-        if (random.nextFloat() >= config.moodLogProbability) return null
-
-        val drawn = random.nextInt(1, 6)
-        val blended = if (previousMood == null) {
-            drawn
+        val rho = config.moodPersistence.coerceIn(0f, 1f)
+        val previous = latentMood
+        val next = if (previous == null) {
+            config.moodMean + config.moodStdDev * nextGaussian()
         } else {
-            val persistence = config.moodPersistence.coerceIn(0f, 1f)
-            val value = persistence * previousMood!! + (1f - persistence) * drawn
-            value.toInt().coerceIn(1, 5)
+            config.moodMean + rho * (previous - config.moodMean) +
+                sqrt(1f - rho * rho) * config.moodStdDev * nextGaussian()
         }
-        previousMood = blended
-        return blended
+        latentMood = next
+        if (random.nextFloat() >= config.moodLogProbability) return null
+        return next.roundToInt().coerceIn(1, 5)
+    }
+
+    private fun nextGaussian(): Float {
+        val u1 = random.nextDouble().coerceAtLeast(1e-12)
+        val u2 = random.nextDouble()
+        return (sqrt(-2.0 * kotlin.math.ln(u1)) * kotlin.math.cos(2.0 * Math.PI * u2)).toFloat()
     }
 
     private fun sampleExpenses(mood: Int?): List<Double> {
